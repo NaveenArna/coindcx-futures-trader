@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Paper-trading journal. No exchange connection and no real order execution."""
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import base64
+import hmac
 import json
 import os
 import sqlite3
@@ -52,8 +54,33 @@ def json_response(handler, status, payload):
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_args):
-        # Keep the local prototype's console output quiet.
+        # Keep the prototype's console output quiet.
         pass
+
+    def authorized(self):
+        username = os.environ.get("APP_USERNAME", "")
+        password = os.environ.get("APP_PASSWORD", "")
+        # Require credentials whenever the app is exposed beyond localhost.
+        if not username or not password:
+            return False
+        header = self.headers.get("Authorization", "")
+        if not header.startswith("Basic "):
+            return False
+        try:
+            decoded = base64.b64decode(header[6:], validate=True).decode("utf-8")
+            supplied_user, supplied_password = decoded.split(":", 1)
+        except (ValueError, UnicodeDecodeError):
+            return False
+        return hmac.compare_digest(supplied_user, username) and hmac.compare_digest(supplied_password, password)
+
+    def require_auth(self):
+        if self.authorized():
+            return True
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="Paper Trading Journal", charset="UTF-8"')
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        return False
 
     def read_json(self):
         length = int(self.headers.get("Content-Length", "0"))
@@ -65,6 +92,8 @@ class Handler(BaseHTTPRequestHandler):
         return data
 
     def do_GET(self):
+        if not self.require_auth():
+            return
         path = urlparse(self.path).path
         if path in ("/", "/dashboard.html"):
             dashboard_path = os.path.join(os.path.dirname(__file__), "dashboard.html")
@@ -106,6 +135,8 @@ class Handler(BaseHTTPRequestHandler):
             db.close()
 
     def do_POST(self):
+        if not self.require_auth():
+            return
         path = urlparse(self.path).path
         try:
             data = self.read_json()
@@ -212,5 +243,9 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     connect().close()
-    print("Paper-trading server: http://127.0.0.1:8000 (no live trading)")
-    HTTPServer(("127.0.0.1", 8000), Handler).serve_forever()
+    host = "0.0.0.0"
+    port = int(os.environ.get("PORT", "8000"))
+    if not os.environ.get("APP_USERNAME") or not os.environ.get("APP_PASSWORD"):
+        raise SystemExit("Set APP_USERNAME and APP_PASSWORD before starting the server.")
+    print(f"Paper-trading server listening on {host}:{port} (paper mode only)")
+    ThreadingHTTPServer((host, port), Handler).serve_forever()
