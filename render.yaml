@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: coindcx-paper-journal
+    runtime: python
+    plan: free
+    buildCommand: "echo 'No third-party packages required'"
+    startCommand: "python app.py"
+    envVars:
+      - key: APP_USERNAME
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
