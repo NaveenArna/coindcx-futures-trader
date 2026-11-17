@@ -66,6 +66,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if path in ("/", "/dashboard.html"):
+            dashboard_path = os.path.join(os.path.dirname(__file__), "dashboard.html")
+            try:
+                with open(dashboard_path, "rb") as dashboard:
+                    body = dashboard.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except FileNotFoundError:
+                return json_response(self, 404, {"error": "dashboard.html is missing"})
+            return
         db = connect()
         try:
             if path == "/health":
