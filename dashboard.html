@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101827">
+<title>Paper Trading Journal</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1220;--panel:#141f31;--line:#26364d;--muted:#9aabc2;--text:#edf4ff;--green:#35c98b;--red:#ff727c;--blue:#79aaff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px system-ui,-apple-system,Segoe UI,sans-serif}
+header{padding:22px 16px 16px;background:#101827;border-bottom:1px solid var(--line)}main{max-width:900px;margin:auto;padding:16px}
+h1{font-size:22px;margin:0 0 5px}h2{font-size:17px;margin:0 0 14px}.sub,.muted{color:var(--muted);font-size:13px}
+.pill{display:inline-block;margin-top:10px;padding:5px 9px;border:1px solid #27664f;border-radius:20px;color:#7ce0b2;font-size:12px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0}
+.card,section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px;margin-bottom:14px}
+.metric{font-size:22px;font-weight:700;margin-top:5px}.positive{color:var(--green)}.negative{color:var(--red)}
+label{display:block;color:var(--muted);font-size:13px;margin:10px 0 5px}
+input,select,button{width:100%;padding:12px;border-radius:9px;border:1px solid var(--line);background:#0d1727;color:var(--text);font:inherit}
+button{background:#2864c7;border:0;font-weight:650;margin-top:13px;cursor:pointer}button.secondary{background:#26364d}button:disabled{opacity:.5}
+.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.notice{font-size:12px;line-height:1.5;color:var(--muted);margin-top:10px}
+.row{display:flex;justify-content:space-between;gap:12px;align-items:center}
+.trade{padding:12px 0;border-top:1px solid var(--line)}.trade:first-child{border-top:0}
+.trade strong{font-size:14px}.trade small{display:block;color:var(--muted);margin-top:4px;line-height:1.5}
+#message{white-space:pre-wrap;margin:10px 0;color:var(--blue);font-size:13px}
+.empty{color:var(--muted);font-size:13px;padding:12px 0}
+@media(min-width:650px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}.forms{display:grid;grid-template-columns:1fr 1fr;gap:14px}}
+</style>
+</head>
+<body>
+<header><main style="padding:0 16px"><h1>Paper Trading Journal</h1><div class="sub">Practice entries, stop-loss and take-profit tracking.</div><span class="pill">PAPER MODE ONLY · NO REAL ORDERS</span></main></header>
+<main>
+<div class="grid">
+ <div class="card"><div class="muted">Virtual balance</div><div class="metric" id="balance">$1,000.00</div></div>
+ <div class="card"><div class="muted">Realized P&amp;L</div><div class="metric" id="pnl">$0.00</div></div>
+ <div class="card"><div class="muted">Open trades</div><div class="metric" id="open">0</div></div>
+ <div class="card"><div class="muted">Win / loss</div><div class="metric" id="record">0 / 0</div></div>
+</div>
+<div class="forms">
+<section>
+<h2>Record a paper trade</h2>
+<form id="tradeForm">
+<label for="symbol">Symbol</label><input id="symbol" value="BTCUSDT" maxlength="30" required>
+<div class="formgrid">
+<div><label for="side">Direction</label><select id="side"><option>LONG</option><option>SHORT</option></select></div>
+<div><label for="entry">Entry price</label><input id="entry" type="number" min="0.00000001" step="any" placeholder="e.g. 95000" required></div>
+<div><label for="stop">Stop loss</label><input id="stop" type="number" min="0.00000001" step="any" required></div>
+<div><label for="target">Take profit</label><input id="target" type="number" min="0.00000001" step="any" required></div>
+</div>
+<button type="submit">Save paper trade</button>
+</form>
+<div class="notice">Sizing uses a fixed $10 risk budget per trade based on a $1,000 starting balance. This prototype does not model fees, slippage, funding or realistic fills.</div>
+</section>
+<section>
+<h2>Update market price</h2>
+<form id="markForm">
+<label for="markSymbol">Symbol</label><input id="markSymbol" placeholder="Must match open trade symbol" required>
+<label for="price">Current / test price</label><input id="price" type="number" min="0.00000001" step="any" placeholder="Enter a price" required>
+<button type="submit" class="secondary">Check stop-loss / take-profit</button>
+</form>
+<div class="notice">Enter a test price manually. An open paper trade closes when its stop-loss or take-profit level is reached.</div>
+</section>
+</div>
+<section><div class="row"><h2 style="margin:0">Trade history</h2><button id="refresh" class="secondary" style="width:auto;margin:0;padding:8px 12px">Refresh</button></div><div id="message" role="status"></div><div id="trades"><div class="empty">Loading trades…</div></div></section>
+<div class="notice">This is a paper-trading prototype only. It is not connected to TradingView or CoinDCX and cannot place live orders. Keep this app private if you later deploy it; this initial version has no login or access control.</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const money=n=>'$'+Number(n||0).toFixed(2);
+function say(t){$('message').textContent=t}
+async function api(path,options){const r=await fetch(path,options);const data=await r.json();if(!r.ok)throw new Error(data.error||'Request failed');return data}
+async function refresh(){
+ try{
+  const [s,t]=await Promise.all([api('/summary'),api('/signals')]);
+  $('balance').textContent=money(s.virtual_balance);$('pnl').textContent=money(s.realized_pnl);
+  $('pnl').className='metric '+(s.realized_pnl>=0?'positive':'negative');
+  $('open').textContent=s.open_trades;$('record').textContent=s.wins+' / '+s.losses;
+  const host=$('trades');host.innerHTML='';
+  if(!t.trades.length){host.innerHTML='<div class="empty">No trades yet. Add your first paper trade above.</div>';return}
+  t.trades.forEach(x=>{
+   const div=document.createElement('div');div.className='trade';
+   const side=x.side==='LONG'?'positive':'negative';
+   const pnl=x.pnl==null?'':(' · P&amp;L '+money(x.pnl));
+   div.innerHTML='<div class="row"><strong>'+esc(x.symbol)+' · <span class="'+side+'">'+esc(x.side)+'</span></strong><strong>'+esc(x.status)+'</strong></div><small>Entry '+x.entry+' · SL '+x.stop_loss+' · TP '+x.take_profit+'<br>Qty '+Number(x.quantity).toFixed(8)+' · Risk '+money(x.risk_amount)+pnl+'</small>';
+   host.appendChild(div);
+  });
+ }catch(e){say('Could not load dashboard: '+e.message)}
+}
+function esc(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+$('tradeForm').addEventListener('submit',async e=>{
+ e.preventDefault();say('Saving paper trade…');
+ try{const result=await api('/signal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:$('symbol').value,side:$('side').value,entry:$('entry').value,stop_loss:$('stop').value,take_profit:$('target').value})});
+ say(result.message+' Trade #'+result.trade_id+' · estimated quantity '+result.quantity);$('markSymbol').value=$('symbol').value;await refresh();
+ }catch(err){say('Could not save trade: '+err.message)}
+});
+$('markForm').addEventListener('submit',async e=>{
+ e.preventDefault();say('Checking open paper trades…');
+ try{const result=await api('/mark',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:$('markSymbol').value,price:$('price').value})});
+ say(result.closed_trades.length?result.closed_trades.map(x=>'Trade #'+x.trade_id+' closed at '+x.exit_price+' ('+x.exit_reason+'), P&L '+money(x.pnl)).join('\n'):'No stop-loss or take-profit was reached at that price.');await refresh();
+ }catch(err){say('Could not update price: '+err.message)}
+});
+$('refresh').addEventListener('click',refresh);refresh();
+</script>
+</body></html>
